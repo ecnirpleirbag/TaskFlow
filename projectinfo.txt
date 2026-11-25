@@ -1,0 +1,178 @@
+Brief
+1. Project Overview
+What will you build? A REST API where you can type a task in plain English, such as "Remind me to pay rent on the 1st of every month", and get a structured task back. The API supports subtasks, safe retries, validation with one consistent error shape, filtering and pagination, and documentation. The natural-language step is built behind a swappable function, so the same code works with a simple rule-based parser now and a real LLM later.
+
+Before you start. You need the tools set up in class: a Python virtual environment, Django, Django REST Framework, Postgres running in Docker, and a DB client connected to it.
+
+
+Skills you will practice
+Django project and app setup in a virtual environment
+
+Models, migrations, and the ORM
+
+Serializers and validation
+
+ModelViewSet, routers, and custom @action endpoints
+
+Foreign keys, cascade delete, and related_name
+
+Consistent error responses and HTTP status codes
+
+Idempotent endpoints using an in-memory store
+
+Filtering, search, ordering, and pagination
+
+Testing with AI assistance, then hardening the tests
+
+Writing API documentation (README and OpenAPI)
+
+
+
+How each requirement builds on what you learned in class
+
+
+
+
+
+
+2. Step-by-Step Brief
+Step 1: Project setup
+Create a virtual environment and install django, djangorestframework, psycopg2-binary, and django-filter.
+
+Run django-admin startproject config . and python manage.py startapp tasks.
+
+Register rest_framework, django_filters, and tasks in INSTALLED_APPS.
+
+Configure DATABASES to use your Docker Postgres.
+
+Run pip freeze > requirements.txt.
+
+
+Step 2: Task model and CRUD
+Create a Task model with these fields:
+
+
+
+Then run makemigrations and migrate, build TaskSerializer (a ModelSerializer) and TaskViewSet (a ModelViewSet), and register the viewset with a DefaultRouter. Test every endpoint with Echo API, Postman, or curl.
+
+
+
+
+Step 3: Validation and one consistent error shape
+Validate the following rules:
+
+title and description must not be empty.
+
+completed must be a boolean.
+
+due_date, if given, must be a real YYYY-MM-DD date. 2026-02-30 must be rejected.
+
+priority must be one of low, medium, high.
+
+Every error response (400 or 404) must use exactly this shape. The code and message values must always be strings.
+
+
+{
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Validation failed",
+    "details": [{ "field": "title", "issue": "must not be empty" }]
+  }
+}
+
+How to build it from what you know:
+
+Write a helper error_response(code, message, details, status) that returns a Response.
+
+Write a second helper that converts serializer.errors into the details list.
+
+Override create, update, and retrieve in your viewset. Call serializer.is_valid() yourself and return the helper's response on failure.
+
+For 404, catch the missing-object case in retrieve, update, and destroy.
+
+Step 4: Natural-language task creation
+
+Add POST /api/tasks/from-text/ which accepts {"text": "..."}.
+
+Write parse_task_text(text, today) in tasks/ai.py. It returns a dictionary with title, description, due_date, and an optional recurrence.
+
+Version 1 is rule-based. Handle phrases like "tomorrow", "every month", and "1st" using datetime and string methods.
+
+Pass the returned dictionary through TaskSerializer before saving, exactly like user input. This is the "never trust the output" rule. If validation fails, return your error shape with status 502 and save nothing.
+
+If parse_task_text raises an exception, return 502.
+
+Document the function signature in the README so it can later be swapped for an LLM call.
+
+API key rule. If you use the optional LLM wrapper, read the key with os.environ.get("LLM_API_KEY") in settings.py. If it is missing, return 503 in your error shape instead of crashing. Add .env to .gitignore and never commit a key.
+
+
+Step 5: Subtasks and breakdown
+
+POST /api/tasks/{id}/subtasks/ creates one subtask using @action(detail=True) and returns 201.
+
+GET /api/tasks/{id}/subtasks/ lists a task's subtasks.
+
+POST /api/tasks/{id}/breakdown/ calls break_down_task(task), which returns a list of subtask dictionaries (rule-based: split on "and" or commas, or use templates).
+
+Validate every item with the serializer first. If any item is invalid, save none and return an error in your error shape.
+
+A task that is itself a subtask cannot be broken down or given subtasks. Return 400.
+
+Deleting a parent deletes its subtasks. Verify this in your DB client.
+
+Step 6: Idempotent creation
+Networks fail and clients retry, so a retry must never create a duplicate. Support an optional Idempotency-Key header on POST /api/tasks/, /api/tasks/from-text/, and /api/tasks/{id}/breakdown/.
+
+Keep a module-level dictionary: {key: {"body": ..., "response": ...}}. An in-memory store is enough.
+
+Read the key with request.headers.get("Idempotency-Key").
+
+Same key and same body: return the stored response. Create nothing and do not call the parser again.
+
+Same key with a different body: return 422 in your error shape.
+
+Store only successful responses, so a client can fix bad input and retry with the same key.
+
+Prove it: send the same request twice and show in your DB client that only one row exists.
+
+Step 7: Filtering, search, ordering, and pagination
+
+Confirm that filtering, search, ordering, and pagination all work together in one request.
+
+Step 8: Testing with AI, then hardening
+You already use Cursor or ChatGPT in class. Use the same workflow:
+
+Ask an AI assistant to generate a test checklist and Echo API / Postman requests for your API.
+
+Run every request against your server. For the parser and breakdown, put a breakpoint in debug mode (as in class) and inspect the data.
+
+Critique the checklist. Look for missing cases: empty or invalid input, unknown IDs, a repeated idempotency key, the same key with a different body, impossible dates, bad parser output (empty title, wrong type), and a subtask of a subtask.
+
+Add the missing requests and save the collection in your repo.
+
+To simulate bad model output without an LLM, temporarily make parse_task_text return an empty title and confirm you get 502 and no row is saved.
+
+Step 9: Documentation
+Your README.md must contain:
+
+An overview of the project.
+
+Setup instructions: venv, installing requirements, Docker Postgres, migrate, runserver, and how to set LLM_API_KEY if you use it.
+
+Every endpoint, with an example request and response, including the AI endpoints and a validation error.
+
+A short note on what the AI-generated checklist missed and what you changed.
+
+Also add openapi.yaml, written by hand, describing your endpoints and your error response.
+
+
+
+Submission guidelines
+Push your code to your GitHub repository and submit the repository link. A pull request is optional. Before submitting, confirm that the README renders correctly, requirements.txt is present, and no API key or .env file is committed.
+
+
+
+Deliverables
+
+GitHub link
