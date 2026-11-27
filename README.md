@@ -28,7 +28,7 @@ A Django REST Framework backend that lets you create tasks in plain English and 
 ```bash
 docker compose up -d
 ```
-This starts Postgres on port 5432 with database `taskflow`, user `postgres`, password `postgres`.
+This starts Postgres on port 5433 (mapped to container port 5432) with database `taskflow`, user `postgres`, password `postgres`.
 
 ### 2 — Create and activate a virtual environment
 ```bash
@@ -281,14 +281,17 @@ GET /api/tasks/?priority=high&completed=false&search=rent&ordering=-due_date&pag
 
 ## Testing notes
 
+The full Postman test collection is saved in [`taskflow_postman_collection.json`](./taskflow_postman_collection.json), and verification screenshots (Postman responses + DB admin state) are in [`ResultScreenShots/`](./ResultScreenShots/).
+
 ### What the AI-generated checklist caught
 - Happy-path CRUD, basic validation, and filter combinations.
 
-### What I added manually
+### What I added / hardened manually
 - **Impossible date:** `due_date: "2026-02-30"` → 400 (DRF rejects it at the field level).
 - **Subtask of a subtask:** POST to `/subtasks/` on a subtask → 400 FORBIDDEN.
-- **Idempotency conflict:** same key, different body → 422.
-- **Parser bad output:** temporarily return `{"title": "", ...}` from `parse_task_text` → 502 PARSER_OUTPUT_INVALID, no DB row created.
-- **Cascade delete:** delete a parent, verify subtasks gone in DB client.
+- **Idempotency conflict:** same key, different body → 422 (`IDEMPOTENCY_CONFLICT`).
+- **Idempotency replay:** same key, same body → replays cached 201 response without creating a duplicate row.
+- **Parser bad output:** temporarily return `{"title": "", ...}` from `parse_task_text` → 502 `PARSER_OUTPUT_INVALID`, no DB row created.
+- **Cascade delete:** delete a parent task and verify its subtasks are removed in the DB client / Django Admin.
 - **Breakdown of a subtask** → 400 FORBIDDEN.
-- **Unknown task ID** on all mutating endpoints → 404.
+- **Unknown task ID** on all retrieve/update/delete/subtask/breakdown endpoints → 404 `NOT_FOUND`.
